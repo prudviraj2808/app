@@ -6,6 +6,7 @@ import shap
 import matplotlib.pyplot as plt
 import streamlit.components.v1 as components
 from llm_explanations import generate_explanation
+import numpy as np
 
 @st.cache_resource
 def load_artifacts():
@@ -26,12 +27,22 @@ def predict_with_shap(user_input_df):
     # Make predictions
     xgb_pred = xgb_model.predict(input_scaled)
     
+    xgb_pred_prob = xgb_model.predict_proba(input_scaled)  # Shape: (n_samples, n_classes)
+
+    # Get predicted class index (class with highest probability)
+    predicted_class = np.argmax(xgb_pred_prob, axis=1)  # Shape: (n_samples,)
+
+    # Get probability score of the predicted class for each sample
+    predicted_class_score = xgb_pred_prob[np.arange(len(xgb_pred_prob)), predicted_class]
+    
     # Compute SHAP values
     explainer = shap.TreeExplainer(xgb_model)
     shap_values = explainer.shap_values(input_scaled)
     
     return {
         "XGBoost Prediction": int(xgb_pred),
+        "XGBoost Prediction Score": float(predicted_class_score[0]),
+        "Predicted Class": int(predicted_class[0]),
         "SHAP Values": shap_values,
         "Explainer": explainer,
         "Input Data": df_selected
@@ -76,33 +87,36 @@ if st.button("Predict"):
     predictions = predict_with_shap(user_input_df)
     st.subheader("Model Predictions")
     st.write({"Prediction": predictions["XGBoost Prediction"]})
+    st.write({"Prediction Score": predictions["XGBoost Prediction Score"]})
+    st.write({"Prediction Class": predictions["Predicted Class"]})
+
 
     # Generate and display the LLM explanation
     explanation = generate_explanation(user_input_df, predictions["XGBoost Prediction"])
     st.subheader("Explanation and Recommendations")
     st.write(explanation)
 
-    # Display SHAP force plots for all classes and samples
-    st.subheader("SHAP Force Plots for All Classes")
+    # Display SHAP waterfall plot for the first prediction
+    print("Individual Prediction Explanation (SHAP Force Plot):")
     explainer = predictions["Explainer"]
     shap_values = predictions["SHAP Values"]
     df_selected = predictions["Input Data"]
 
-    # Ensure SHAP JS is loaded
+    class_index = predictions["XGBoost Prediction"]
+
+    # Generate SHAP force plot
+    fig, ax = plt.subplots(figsize=(8, 6))
     shap.initjs()
+    # Adjust the SHAP force plot to handle the correct index
+    # Generate a bar plot for SHAP values of the predicted class
+    shap_values_class = shap_values[0][:, class_index]
+    feature_names = df_selected.columns
 
-    # Loop through each sample and class
-    for sample_index in range(shap_values.shape[0]):  # Loop over samples
-        for class_index in range(shap_values.shape[2]):  # Loop over classes
-            st.markdown(f"### Sample {sample_index}, Class {class_index}")
-            
-            force_plot = shap.force_plot(
-                explainer.expected_value[class_index], 
-                shap_values[sample_index, :, class_index], 
-                df_selected.iloc[sample_index], 
-                matplotlib=False  # Ensure it uses JS-based visualization
-            )
-
-            # Render the HTML in Streamlit using the .html() method
-            shap_html = f"<head>{shap.getjs()}</head><body>{force_plot.html()}</body>"
-            components.html(shap_html, height=400)
+    # Create the bar plot
+    plt.barh(feature_names, shap_values_class)
+    plt.xlabel("SHAP Value")
+    plt.ylabel("Feature")
+    plt.title("SHAP Values for Predicted Class")
+    plt.tight_layout()
+    st.pyplot(fig)
+  
