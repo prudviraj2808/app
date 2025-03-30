@@ -9,4 +9,4 @@ xgboost
 imbalanced-learn
 joblib
 streamlit
-matplotllib
+matplotlib
