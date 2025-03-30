@@ -10,3 +10,4 @@ imbalanced-learn
 joblib
 streamlit
 matplotlib
+ipython
