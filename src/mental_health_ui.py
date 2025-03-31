@@ -5,8 +5,8 @@ import os
 import shap
 import matplotlib.pyplot as plt
 import streamlit.components.v1 as components
-from llm_explanations import generate_explanation
 import numpy as np
+import google.generativeai as genai
 
 @st.cache_resource
 def load_artifacts():
@@ -86,19 +86,13 @@ user_input = {
 # Convert dictionary to DataFrame
 user_input_df = pd.DataFrame(user_input, index=[0])
 
+predictions = predict_with_shap(user_input_df)  # Define globally
+
 if st.button("Predict"):
     predictions = predict_with_shap(user_input_df)
     st.subheader("Model Predictions")
     st.write({"Prediction Score": predictions["XGBoost Prediction Score"]})
     st.write({"Prediction Class": predictions["Predicted Class"]})
-
-    # Generate and display the LLM explanation if API key is provided
-    if api_key:
-        explanation = generate_explanation(user_input_df, predictions["XGBoost Prediction Score"], predictions["Predicted Class"], api_key)
-        st.subheader("Explanation and Recommendations")
-        st.write(explanation)
-    else:
-        st.warning("Please enter an API key to generate explanations.")
 
     # Display SHAP waterfall plot for the first prediction
     explainer = predictions["Explainer"]
@@ -122,3 +116,104 @@ if st.button("Predict"):
     plt.title("SHAP Values for Predicted Class")
     plt.tight_layout()
     st.pyplot(fig)
+
+def generate_explanation(user_input, prediction_score, predicted_class, api_key):
+    """
+    Generate an explanation using Google Gemini API based on patient data and predictions.
+    
+    Parameters:
+        user_input (pd.DataFrame): DataFrame containing patient data.
+        prediction_score (float): Predicted score from the ML model.
+        predicted_class (str): Assigned stage/classification of mental health severity.
+    
+    Returns:
+        str: AI-generated response with explanation and recommendations.
+    """
+    
+    # Convert user input DataFrame to JSON-like string
+    input_str = user_input.to_json(orient="records", lines=True)
+    
+    # Define the prompt
+    prompt = (f"""
+        You are a licensed mental health specialist with expertise in assessment, diagnosis, and treatment of various mental health conditions. 
+        You have been assigned to work with a patient who has shared their personal data and medical history with you.
+        
+        You have access to the patient's comprehensive data {input_str} and predicted classification (Assigned_Stage) along with prediction scores.
+        The data includes the following attributes with their definitions:
+        
+        • PHQ-9: Patient Health Questionnaire-9, a standardized questionnaire to assess the severity of depressive symptoms.
+        • SOFAS: Social and Occupational Functioning Assessment Scale, a measure of an individual's level of social and occupational functioning.
+        • Duration_Months: The length of time (in months) an individual has been experiencing mental health symptoms or episodes.
+        • Suicidality: The presence and severity of suicidal thoughts, intentions, or behaviors.
+        • Past_Episodes: The number of previous episodes or instances of mental health conditions.
+        • Treatment_Response_Failed2+: Indicates whether an individual has failed to respond to two or more treatments for their mental health condition.
+        • Trauma: Experiences of physical, emotional, or psychological trauma.
+        • Substance_Use: The use or misuse of substances that can impact mental health.
+        
+        Based on this data, a machine learning model has generated a prediction score of {prediction_score} and classified the patient's mental health severity as {predicted_class} (Assigned_Stage).
+        
+        Your task is to:
+        1. Provide a detailed explanation of the results, including the implications of the predicted score and classification.
+        2. Suggest potential coping mechanisms and strategies tailored to the patient's specific needs and circumstances.
+        3. Advise on next steps for mental health care, including recommendations for therapy, medication, or lifestyle changes.
+        
+        Please respond with a comprehensive and compassionate report that addresses the patient's unique situation and promotes their overall well-being.
+    """)
+    
+    # Configure Gemini API
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-1.5-pro")
+    response = model.generate_content(prompt)
+    return response.text
+
+
+
+def chat_with_model(user_input, prediction_score, predicted_class, api_key):
+    """Interactive chat function for Streamlit UI."""
+    model = genai.GenerativeModel("gemini-1.5-pro")
+
+    # Initialize session state variables
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    if "explanation_history" not in st.session_state:
+        st.session_state.explanation_history = []  # Store multiple explanations
+
+    # Generate explanation only when a new prediction is made
+    if "last_prediction" not in st.session_state or st.session_state.last_prediction != (prediction_score, predicted_class):
+        new_explanation = generate_explanation(user_input, prediction_score, predicted_class, api_key)
+        
+        # Store new explanation in history
+        st.session_state.explanation_history.append(new_explanation)
+        st.session_state.messages.append({"role": "AI", "content": new_explanation})
+
+        # Update last prediction to avoid regenerating explanation
+        st.session_state.last_prediction = (prediction_score, predicted_class)
+
+    # Display explanation history
+    st.subheader("🔍 Explanation History")
+    for idx, explanation in enumerate(st.session_state.explanation_history):
+        with st.expander(f"Explanation {idx + 1}"):
+            st.markdown(explanation)
+
+    # Display stored chat messages
+    for message in st.session_state.messages:
+        with st.chat_message("assistant" if message["role"] == "AI" else "user"):
+            st.markdown(message["content"])
+
+    # Handle user input
+    user_query = st.chat_input("Ask me anything...")
+    if user_query:
+        st.session_state.messages.append({"role": "user", "content": user_query})
+
+        response = model.generate_content(user_query).text
+        st.session_state.messages.append({"role": "AI", "content": response})
+
+        with st.chat_message("assistant"):
+            st.markdown(response)
+
+
+
+
+if api_key:
+    chat_with_model(user_input_df, predictions["XGBoost Prediction Score"], predictions["XGBoost Prediction"], api_key)
