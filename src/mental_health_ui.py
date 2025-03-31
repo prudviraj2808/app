@@ -117,6 +117,8 @@ if st.button("Predict"):
     plt.tight_layout()
     st.pyplot(fig)
 
+
+
 def generate_explanation(user_input, prediction_score, predicted_class, api_key):
     """
     Generate an explanation using Google Gemini API based on patient data and predictions.
@@ -172,22 +174,18 @@ def chat_with_model(user_input, prediction_score, predicted_class, api_key):
     """Interactive chat function for Streamlit UI."""
     model = genai.GenerativeModel("gemini-1.5-pro")
 
-    # Initialize session state variables
-    if "messages" not in st.session_state:
+    # Check if it's a new prediction
+    if "last_prediction" not in st.session_state or st.session_state.last_prediction != (prediction_score, predicted_class):
+        # Clear explanation history and chat messages
+        st.session_state.explanation_history = []
         st.session_state.messages = []
 
-    if "explanation_history" not in st.session_state:
-        st.session_state.explanation_history = []  # Store multiple explanations
-
-    # Generate explanation only when a new prediction is made
-    if "last_prediction" not in st.session_state or st.session_state.last_prediction != (prediction_score, predicted_class):
+        # Generate new explanation
         new_explanation = generate_explanation(user_input, prediction_score, predicted_class, api_key)
-        
-        # Store new explanation in history
         st.session_state.explanation_history.append(new_explanation)
         st.session_state.messages.append({"role": "AI", "content": new_explanation})
 
-        # Update last prediction to avoid regenerating explanation
+        # Update last prediction to avoid regenerating explanation unnecessarily
         st.session_state.last_prediction = (prediction_score, predicted_class)
 
     # Display explanation history
@@ -211,7 +209,6 @@ def chat_with_model(user_input, prediction_score, predicted_class, api_key):
 
         with st.chat_message("assistant"):
             st.markdown(response)
-
 
 
 
