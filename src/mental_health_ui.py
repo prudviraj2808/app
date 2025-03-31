@@ -65,6 +65,9 @@ treatment_failed = st.checkbox("Treatment Response Failed (2+ episodes)")
 trauma = st.checkbox("Trauma")
 substance_use = st.checkbox("Substance Use")
 
+# API Key input
+api_key = st.text_input("Enter API Key for Explanation Generation", type="password")
+
 # Convert categorical values to numeric
 suicidality_mapping = {"Unknown": 0, "Passive": 1, "Active": 2}
 
@@ -86,18 +89,18 @@ user_input_df = pd.DataFrame(user_input, index=[0])
 if st.button("Predict"):
     predictions = predict_with_shap(user_input_df)
     st.subheader("Model Predictions")
-    st.write({"Prediction": predictions["XGBoost Prediction"]})
     st.write({"Prediction Score": predictions["XGBoost Prediction Score"]})
     st.write({"Prediction Class": predictions["Predicted Class"]})
 
-
-    # Generate and display the LLM explanation
-    explanation = generate_explanation(user_input_df, predictions["XGBoost Prediction"])
-    st.subheader("Explanation and Recommendations")
-    st.write(explanation)
+    # Generate and display the LLM explanation if API key is provided
+    if api_key:
+        explanation = generate_explanation(user_input_df, predictions["XGBoost Prediction Score"], predictions["Predicted Class"], api_key)
+        st.subheader("Explanation and Recommendations")
+        st.write(explanation)
+    else:
+        st.warning("Please enter an API key to generate explanations.")
 
     # Display SHAP waterfall plot for the first prediction
-    print("Individual Prediction Explanation (SHAP Force Plot):")
     explainer = predictions["Explainer"]
     shap_values = predictions["SHAP Values"]
     df_selected = predictions["Input Data"]
@@ -119,4 +122,3 @@ if st.button("Predict"):
     plt.title("SHAP Values for Predicted Class")
     plt.tight_layout()
     st.pyplot(fig)
-  
