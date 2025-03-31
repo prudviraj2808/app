@@ -11,3 +11,4 @@ joblib
 streamlit
 matplotlib
 ipython
+google-generativeai
